@@ -1,6 +1,8 @@
 import { Response } from 'express';
+import { Op } from 'sequelize';
 import Transaction from '../models/Transaction';
 import { AuthRequest } from '../middleware/auth';
+import sequelize from '../config/database';
 
 // @desc    Get all transactions for user
 // @route   GET /api/transactions
@@ -12,29 +14,31 @@ export const getTransactions = async (
   try {
     const { type, startDate, endDate, category, limit = 50, page = 1 } = req.query;
 
-    const query: any = { userId: req.user?._id };
+    const where: any = { userId: req.user?.id };
 
-    if (type) query.type = type;
-    if (category) query.category = category;
+    if (type) where.type = type;
+    if (category) where.category = category;
     if (startDate || endDate) {
-      query.date = {};
-      if (startDate) query.date.$gte = new Date(startDate as string);
-      if (endDate) query.date.$lte = new Date(endDate as string);
+      where.date = {};
+      if (startDate) where.date[Op.gte] = new Date(startDate as string);
+      if (endDate) where.date[Op.lte] = new Date(endDate as string);
     }
 
-    const transactions = await Transaction.find(query)
-      .sort({ date: -1 })
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
+    const offset = (Number(page) - 1) * Number(limit);
 
-    const total = await Transaction.countDocuments(query);
+    const { count, rows: transactions } = await Transaction.findAndCountAll({
+      where,
+      order: [['date', 'DESC']],
+      limit: Number(limit),
+      offset,
+    });
 
     res.status(200).json({
       success: true,
       count: transactions.length,
-      total,
+      total: count,
       page: Number(page),
-      pages: Math.ceil(total / Number(limit)),
+      pages: Math.ceil(count / Number(limit)),
       data: transactions,
     });
   } catch (error: any) {
@@ -54,8 +58,10 @@ export const getTransaction = async (
 ): Promise<void> => {
   try {
     const transaction = await Transaction.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!transaction) {
@@ -88,7 +94,7 @@ export const createTransaction = async (
   try {
     const transactionData = {
       ...req.body,
-      userId: req.user?._id,
+      userId: req.user?.id,
     };
 
     const transaction = await Transaction.create(transactionData);
@@ -113,9 +119,11 @@ export const updateTransaction = async (
   res: Response
 ): Promise<void> => {
   try {
-    let transaction = await Transaction.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+    const transaction = await Transaction.findOne({
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!transaction) {
@@ -126,14 +134,7 @@ export const updateTransaction = async (
       return;
     }
 
-    transaction = await Transaction.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+    await transaction.update(req.body);
 
     res.status(200).json({
       success: true,
@@ -156,8 +157,10 @@ export const deleteTransaction = async (
 ): Promise<void> => {
   try {
     const transaction = await Transaction.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!transaction) {
@@ -168,7 +171,7 @@ export const deleteTransaction = async (
       return;
     }
 
-    await transaction.deleteOne();
+    await transaction.destroy();
 
     res.status(200).json({
       success: true,
@@ -191,24 +194,24 @@ export const getTransactionSummary = async (
 ): Promise<void> => {
   try {
     const { startDate, endDate } = req.query;
-    const query: any = { userId: req.user?._id };
+    const where: any = { userId: req.user?.id };
 
     if (startDate || endDate) {
-      query.date = {};
-      if (startDate) query.date.$gte = new Date(startDate as string);
-      if (endDate) query.date.$lte = new Date(endDate as string);
+      where.date = {};
+      if (startDate) where.date[Op.gte] = new Date(startDate as string);
+      if (endDate) where.date[Op.lte] = new Date(endDate as string);
     }
 
-    const summary = await Transaction.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: '$type',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    const summary = await Transaction.findAll({
+      where,
+      attributes: [
+        'type',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+      ],
+      group: ['type'],
+      raw: true,
+    });
 
     const formattedSummary = {
       income: 0,
@@ -219,16 +222,19 @@ export const getTransactionSummary = async (
       transferCount: 0,
     };
 
-    summary.forEach((item) => {
-      if (item._id === 'income') {
-        formattedSummary.income = item.total;
-        formattedSummary.incomeCount = item.count;
-      } else if (item._id === 'expense') {
-        formattedSummary.expense = item.total;
-        formattedSummary.expenseCount = item.count;
-      } else if (item._id === 'transfer') {
-        formattedSummary.transfer = item.total;
-        formattedSummary.transferCount = item.count;
+    summary.forEach((item: any) => {
+      const total = parseFloat(item.total);
+      const count = parseInt(item.count);
+
+      if (item.type === 'income') {
+        formattedSummary.income = total;
+        formattedSummary.incomeCount = count;
+      } else if (item.type === 'expense') {
+        formattedSummary.expense = total;
+        formattedSummary.expenseCount = count;
+      } else if (item.type === 'transfer') {
+        formattedSummary.transfer = total;
+        formattedSummary.transferCount = count;
       }
     });
 

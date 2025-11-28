@@ -1,70 +1,67 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { Table, Column, Model, DataType } from 'sequelize-typescript';
 import bcrypt from 'bcryptjs';
 
-export interface IUser extends Document {
-  name: string;
-  email: string;
-  password: string;
-  phone?: string;
-  occupation: 'driver' | 'freelancer' | 'hybrid' | 'other';
-  avatar?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  comparePassword(candidatePassword: string): Promise<boolean>;
-}
-
-const userSchema = new Schema<IUser>(
-  {
-    name: {
-      type: String,
-      required: [true, 'Name is required'],
-      trim: true,
+@Table({
+  tableName: 'users',
+  timestamps: true,
+  hooks: {
+    beforeCreate: async (user: User) => {
+      if (user.password) {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      }
     },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: 6,
-      select: false,
-    },
-    phone: {
-      type: String,
-      trim: true,
-    },
-    occupation: {
-      type: String,
-      enum: ['driver', 'freelancer', 'hybrid', 'other'],
-      default: 'other',
-    },
-    avatar: {
-      type: String,
+    beforeUpdate: async (user: User) => {
+      if (user.changed('password')) {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      }
     },
   },
-  {
-    timestamps: true,
+})
+export default class User extends Model {
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+  })
+  name!: string;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+    unique: true,
+    validate: {
+      isEmail: true,
+    },
+  })
+  email!: string;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+  })
+  password!: string;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+  })
+  phone?: string;
+
+  @Column({
+    type: DataType.ENUM('driver', 'freelancer', 'hybrid', 'other'),
+    defaultValue: 'other',
+  })
+  occupation!: 'driver' | 'freelancer' | 'hybrid' | 'other';
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+  })
+  avatar?: string;
+
+  // Compare password method
+  async comparePassword(candidatePassword: string): Promise<boolean> {
+    return bcrypt.compare(candidatePassword, this.password);
   }
-);
-
-// Hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
-});
-
-// Compare password method
-userSchema.methods.comparePassword = async function (
-  candidatePassword: string
-): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password);
-};
-
-export default mongoose.model<IUser>('User', userSchema);
+}

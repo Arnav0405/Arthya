@@ -1,61 +1,63 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from 'sequelize-typescript';
+import User from './User';
 
-export interface INotification extends Document {
-  userId: mongoose.Types.ObjectId;
-  title: string;
-  message: string;
-  type: 'info' | 'warning' | 'success' | 'alert';
-  category: 'transaction' | 'goal' | 'coaching' | 'system';
-  isRead: boolean;
+@Table({
+  tableName: 'notifications',
+  timestamps: true,
+  indexes: [
+    { fields: ['userId', 'isRead', 'createdAt'] },
+  ],
+})
+export default class Notification extends Model {
+  @ForeignKey(() => User)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: false,
+  })
+  userId!: number;
+
+  @BelongsTo(() => User)
+  user!: User;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+  })
+  title!: string;
+
+  @Column({
+    type: DataType.TEXT,
+    allowNull: false,
+  })
+  message!: string;
+
+  @Column({
+    type: DataType.ENUM('info', 'warning', 'success', 'alert'),
+    defaultValue: 'info',
+  })
+  type!: 'info' | 'warning' | 'success' | 'alert';
+
+  @Column({
+    type: DataType.ENUM('transaction', 'goal', 'coaching', 'system'),
+    allowNull: false,
+  })
+  category!: 'transaction' | 'goal' | 'coaching' | 'system';
+
+  @Column({
+    type: DataType.BOOLEAN,
+    defaultValue: false,
+  })
+  isRead!: boolean;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+  })
   actionUrl?: string;
+
+  @Column({
+    type: DataType.JSONB,
+    allowNull: true,
+  })
   metadata?: Record<string, any>;
-  createdAt: Date;
 }
-
-const notificationSchema = new Schema<INotification>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true,
-    },
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    message: {
-      type: String,
-      required: true,
-    },
-    type: {
-      type: String,
-      enum: ['info', 'warning', 'success', 'alert'],
-      default: 'info',
-    },
-    category: {
-      type: String,
-      enum: ['transaction', 'goal', 'coaching', 'system'],
-      required: true,
-    },
-    isRead: {
-      type: Boolean,
-      default: false,
-    },
-    actionUrl: {
-      type: String,
-    },
-    metadata: {
-      type: Schema.Types.Mixed,
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
-
-// Index for efficient querying
-notificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });
-
-export default mongoose.model<INotification>('Notification', notificationSchema);
