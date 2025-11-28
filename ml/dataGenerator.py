@@ -3,6 +3,9 @@ import numpy as np
 import random
 from datetime import datetime, timedelta
 
+random.seed(42)
+np.random.seed(42)
+
 # --- Configuration & Indian Context Data ---
 
 # Date Range: Past 365 days ending Dec 31, 2024
