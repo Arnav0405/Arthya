@@ -4,7 +4,7 @@ import User from '../models/User';
 import { AuthRequest } from '../middleware/auth';
 
 // Generate JWT Token
-const generateToken = (id: string): string => {
+const generateToken = (id: number): string => {
   const secret = process.env.JWT_SECRET || 'default-secret';
   return jwt.sign({ id }, secret, { expiresIn: '7d' });
 };
@@ -17,7 +17,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const { name, email, password, phone, occupation } = req.body;
 
     // Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ where: { email } });
 
     if (userExists) {
       res.status(400).json({
@@ -36,12 +36,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       occupation,
     });
 
-    const token = generateToken(user._id.toString());
+    const token = generateToken(user.id);
 
     res.status(201).json({
       success: true,
       data: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         occupation: user.occupation,
@@ -73,7 +73,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check for user
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ where: { email } });
 
     if (!user) {
       res.status(401).json({
@@ -94,12 +94,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = generateToken(user._id.toString());
+    const token = generateToken(user.id);
 
     res.status(200).json({
       success: true,
       data: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         occupation: user.occupation,
@@ -119,7 +119,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 // @access  Private
 export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const user = await User.findById(req.user?._id);
+    const user = await User.findByPk(req.user?.id);
 
     res.status(200).json({
       success: true,
@@ -141,17 +141,24 @@ export const updateProfile = async (
   res: Response
 ): Promise<void> => {
   try {
-    const fieldsToUpdate = {
-      name: req.body.name,
-      phone: req.body.phone,
-      occupation: req.body.occupation,
-      avatar: req.body.avatar,
-    };
+    const user = await User.findByPk(req.user?.id);
 
-    const user = await User.findByIdAndUpdate(req.user?._id, fieldsToUpdate, {
-      new: true,
-      runValidators: true,
-    });
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+      return;
+    }
+
+    const { name, phone, occupation, avatar } = req.body;
+
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    if (occupation) user.occupation = occupation;
+    if (avatar) user.avatar = avatar;
+
+    await user.save();
 
     res.status(200).json({
       success: true,

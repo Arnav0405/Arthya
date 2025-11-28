@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { Op } from 'sequelize';
 import Transaction from '../models/Transaction';
 import Goal from '../models/Goal';
 import Notification from '../models/Notification';
@@ -12,29 +13,33 @@ export const getFinancialAdvice = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?._id;
+    const userId = req.user?.id;
 
     // Get recent financial data
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const recentTransactions = await Transaction.find({
-      userId,
-      date: { $gte: thirtyDaysAgo },
+    const recentTransactions = await Transaction.findAll({
+      where: {
+        userId,
+        date: { [Op.gte]: thirtyDaysAgo },
+      },
     });
 
     const income = recentTransactions
       .filter((t) => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const expenses = recentTransactions
       .filter((t) => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0;
 
     // Get active goals
-    const activeGoals = await Goal.find({ userId, status: 'active' });
+    const activeGoals = await Goal.findAll({
+      where: { userId, status: 'active' },
+    });
 
     // Generate personalized advice
     const advice = [];
@@ -62,7 +67,7 @@ export const getFinancialAdvice = async (
     const expensesByCategory = recentTransactions
       .filter((t) => t.type === 'expense')
       .reduce((acc: any, t) => {
-        acc[t.category] = (acc[t.category] || 0) + t.amount;
+        acc[t.category] = (acc[t.category] || 0) + Number(t.amount);
         return acc;
       }, {});
 
@@ -85,14 +90,14 @@ export const getFinancialAdvice = async (
 
     // Goal progress advice
     activeGoals.forEach((goal) => {
-      const progress = (goal.currentAmount / goal.targetAmount) * 100;
+      const progress = (Number(goal.currentAmount) / Number(goal.targetAmount)) * 100;
       if (progress < 50 && goal.deadline) {
         const daysLeft = Math.ceil(
           (goal.deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
         );
         if (daysLeft < 90) {
           const monthlyNeeded =
-            (goal.targetAmount - goal.currentAmount) / (daysLeft / 30);
+            (Number(goal.targetAmount) - Number(goal.currentAmount)) / (daysLeft / 30);
           advice.push({
             type: 'alert',
             category: 'goals',
@@ -111,7 +116,7 @@ export const getFinancialAdvice = async (
     if (incomeTransactions.length > 0) {
       const avgIncome = income / incomeTransactions.length;
       const variance = incomeTransactions.reduce(
-        (sum, t) => sum + Math.pow(t.amount - avgIncome, 2),
+        (sum, t) => sum + Math.pow(Number(t.amount) - avgIncome, 2),
         0
       );
       const stdDev = Math.sqrt(variance / incomeTransactions.length);
@@ -156,16 +161,18 @@ export const getSpendingInsights = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?._id;
+    const userId = req.user?.id;
     const { period = '30' } = req.query;
 
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - Number(period));
 
-    const transactions = await Transaction.find({
-      userId,
-      type: 'expense',
-      date: { $gte: daysAgo },
+    const transactions = await Transaction.findAll({
+      where: {
+        userId,
+        type: 'expense',
+        date: { [Op.gte]: daysAgo },
+      },
     });
 
     const insights = {
@@ -178,7 +185,7 @@ export const getSpendingInsights = async (
 
     if (transactions.length > 0) {
       insights.totalSpent = transactions.reduce(
-        (sum, t) => sum + t.amount,
+        (sum, t) => sum + Number(t.amount),
         0
       );
       insights.averageTransaction = insights.totalSpent / transactions.length;
@@ -187,7 +194,7 @@ export const getSpendingInsights = async (
       const spendingByDay: any = {};
       transactions.forEach((t) => {
         const day = t.date.toISOString().split('T')[0];
-        spendingByDay[day] = (spendingByDay[day] || 0) + t.amount;
+        spendingByDay[day] = (spendingByDay[day] || 0) + Number(t.amount);
       });
 
       insights.mostExpensiveDay = Object.entries(spendingByDay).sort(
@@ -198,7 +205,7 @@ export const getSpendingInsights = async (
       const spendingByCategory: any = {};
       transactions.forEach((t) => {
         spendingByCategory[t.category] =
-          (spendingByCategory[t.category] || 0) + t.amount;
+          (spendingByCategory[t.category] || 0) + Number(t.amount);
       });
 
       insights.mostExpensiveCategory = Object.entries(spendingByCategory).sort(
@@ -229,7 +236,7 @@ export const createSmartNotification = async (
     const { title, message, type, category } = req.body;
 
     const notification = await Notification.create({
-      userId: req.user?._id,
+      userId: req.user?.id,
       title,
       message,
       type,

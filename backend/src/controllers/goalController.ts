@@ -11,11 +11,14 @@ export const getGoals = async (
 ): Promise<void> => {
   try {
     const { status } = req.query;
-    const query: any = { userId: req.user?._id };
+    const where: any = { userId: req.user?.id };
 
-    if (status) query.status = status;
+    if (status) where.status = status;
 
-    const goals = await Goal.find(query).sort({ createdAt: -1 });
+    const goals = await Goal.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+    });
 
     res.status(200).json({
       success: true,
@@ -39,8 +42,10 @@ export const getGoal = async (
 ): Promise<void> => {
   try {
     const goal = await Goal.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!goal) {
@@ -73,7 +78,7 @@ export const createGoal = async (
   try {
     const goalData = {
       ...req.body,
-      userId: req.user?._id,
+      userId: req.user?.id,
     };
 
     const goal = await Goal.create(goalData);
@@ -98,9 +103,11 @@ export const updateGoal = async (
   res: Response
 ): Promise<void> => {
   try {
-    let goal = await Goal.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+    const goal = await Goal.findOne({
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!goal) {
@@ -111,10 +118,7 @@ export const updateGoal = async (
       return;
     }
 
-    goal = await Goal.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    await goal.update(req.body);
 
     res.status(200).json({
       success: true,
@@ -147,8 +151,10 @@ export const updateGoalProgress = async (
     }
 
     const goal = await Goal.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!goal) {
@@ -160,6 +166,12 @@ export const updateGoalProgress = async (
     }
 
     goal.currentAmount += Number(amount);
+    
+    // Auto-update status if target reached
+    if (goal.currentAmount >= goal.targetAmount && goal.status === 'active') {
+      goal.status = 'completed';
+    }
+    
     await goal.save();
 
     res.status(200).json({
@@ -184,8 +196,10 @@ export const deleteGoal = async (
 ): Promise<void> => {
   try {
     const goal = await Goal.findOne({
-      _id: req.params.id,
-      userId: req.user?._id,
+      where: {
+        id: req.params.id,
+        userId: req.user?.id,
+      },
     });
 
     if (!goal) {
@@ -196,7 +210,7 @@ export const deleteGoal = async (
       return;
     }
 
-    await goal.deleteOne();
+    await goal.destroy();
 
     res.status(200).json({
       success: true,

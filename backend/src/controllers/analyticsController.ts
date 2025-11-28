@@ -1,8 +1,10 @@
 import { Response } from 'express';
+import { Op } from 'sequelize';
 import Transaction from '../models/Transaction';
 import Goal from '../models/Goal';
 import Card from '../models/Card';
 import { AuthRequest } from '../middleware/auth';
+import sequelize from '../config/database';
 
 // @desc    Get financial dashboard
 // @route   GET /api/analytics/dashboard
@@ -12,7 +14,7 @@ export const getDashboard = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?._id;
+    const userId = req.user?.id;
 
     // Get current month date range
     const now = new Date();
@@ -20,21 +22,22 @@ export const getDashboard = async (
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
     // Get transaction summary for current month
-    const monthlyTransactions = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          date: { $gte: startOfMonth, $lte: endOfMonth },
+    const monthlyTransactions = await Transaction.findAll({
+      where: {
+        userId,
+        date: {
+          [Op.gte]: startOfMonth,
+          [Op.lte]: endOfMonth,
         },
       },
-      {
-        $group: {
-          _id: '$type',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+      attributes: [
+        'type',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+      ],
+      group: ['type'],
+      raw: true,
+    });
 
     const summary = {
       income: 0,
@@ -43,30 +46,39 @@ export const getDashboard = async (
     };
 
     monthlyTransactions.forEach((item: any) => {
-      if (item._id === 'income') summary.income = item.total;
-      if (item._id === 'expense') summary.expense = item.total;
+      const total = parseFloat(item.total);
+      if (item.type === 'income') summary.income = total;
+      if (item.type === 'expense') summary.expense = total;
     });
 
     summary.savings = summary.income - summary.expense;
 
     // Get active goals
-    const activeGoals = await Goal.find({
-      userId,
-      status: 'active',
-    }).limit(5);
+    const activeGoals = await Goal.findAll({
+      where: {
+        userId,
+        status: 'active',
+      },
+      limit: 5,
+    });
 
     // Get total available balance from cards
-    const cards = await Card.find({ userId, isActive: true });
-    const totalBalance = cards.reduce((sum, card) => sum + card.balance, 0);
+    const cards = await Card.findAll({
+      where: { userId, isActive: true },
+    });
+
+    const totalBalance = cards.reduce((sum, card) => sum + Number(card.balance), 0);
     const totalCreditLimit = cards.reduce(
-      (sum, card) => sum + (card.creditLimit || 0),
+      (sum, card) => sum + (card.creditLimit ? Number(card.creditLimit) : 0),
       0
     );
 
     // Get recent transactions
-    const recentTransactions = await Transaction.find({ userId })
-      .sort({ date: -1 })
-      .limit(10);
+    const recentTransactions = await Transaction.findAll({
+      where: { userId },
+      order: [['date', 'DESC']],
+      limit: 10,
+    });
 
     res.status(200).json({
       success: true,
@@ -99,53 +111,43 @@ export const getSpendingTrends = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?._id;
+    const userId = req.user?.id;
     const { period = '30' } = req.query;
 
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - Number(period));
 
-    const trends = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          date: { $gte: daysAgo },
-        },
+    const trends = await Transaction.findAll({
+      where: {
+        userId,
+        date: { [Op.gte]: daysAgo },
       },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-            type: '$type',
-          },
-          total: { $sum: '$amount' },
-        },
-      },
-      {
-        $sort: { '_id.date': 1 },
-      },
-    ]);
+      attributes: [
+        [sequelize.fn('DATE', sequelize.col('date')), 'date'],
+        'type',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+      ],
+      group: [sequelize.fn('DATE', sequelize.col('date')), 'type'],
+      order: [[sequelize.fn('DATE', sequelize.col('date')), 'ASC']],
+      raw: true,
+    });
 
     // Get spending by category
-    const categoryBreakdown = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          type: 'expense',
-          date: { $gte: daysAgo },
-        },
+    const categoryBreakdown = await Transaction.findAll({
+      where: {
+        userId,
+        type: 'expense',
+        date: { [Op.gte]: daysAgo },
       },
-      {
-        $group: {
-          _id: '$category',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $sort: { total: -1 },
-      },
-    ]);
+      attributes: [
+        'category',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+      ],
+      group: ['category'],
+      order: [[sequelize.fn('SUM', sequelize.col('amount')), 'DESC']],
+      raw: true,
+    });
 
     res.status(200).json({
       success: true,
@@ -170,56 +172,52 @@ export const getIncomeAnalysis = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?._id;
+    const userId = req.user?.id;
 
     // Get last 6 months income
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const monthlyIncome = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          type: 'income',
-          date: { $gte: sixMonthsAgo },
-        },
+    const monthlyIncome = await Transaction.findAll({
+      where: {
+        userId,
+        type: 'income',
+        date: { [Op.gte]: sixMonthsAgo },
       },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$date' },
-            month: { $month: '$date' },
-          },
-          total: { $sum: '$amount' },
-          count: { $sum: 1 },
-          avgAmount: { $avg: '$amount' },
-        },
-      },
-      {
-        $sort: { '_id.year': 1, '_id.month': 1 },
-      },
-    ]);
+      attributes: [
+        [sequelize.fn('EXTRACT', sequelize.literal('YEAR FROM date')), 'year'],
+        [sequelize.fn('EXTRACT', sequelize.literal('MONTH FROM date')), 'month'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+        [sequelize.fn('AVG', sequelize.col('amount')), 'avgAmount'],
+      ],
+      group: [
+        sequelize.fn('EXTRACT', sequelize.literal('YEAR FROM date')),
+        sequelize.fn('EXTRACT', sequelize.literal('MONTH FROM date')),
+      ],
+      order: [
+        [sequelize.fn('EXTRACT', sequelize.literal('YEAR FROM date')), 'ASC'],
+        [sequelize.fn('EXTRACT', sequelize.literal('MONTH FROM date')), 'ASC'],
+      ],
+      raw: true,
+    });
 
     // Get income by category
-    const incomeByCategory = await Transaction.aggregate([
-      {
-        $match: {
-          userId,
-          type: 'income',
-          date: { $gte: sixMonthsAgo },
-        },
+    const incomeByCategory = await Transaction.findAll({
+      where: {
+        userId,
+        type: 'income',
+        date: { [Op.gte]: sixMonthsAgo },
       },
-      {
-        $group: {
-          _id: '$category',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $sort: { total: -1 },
-      },
-    ]);
+      attributes: [
+        'category',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+      ],
+      group: ['category'],
+      order: [[sequelize.fn('SUM', sequelize.col('amount')), 'DESC']],
+      raw: true,
+    });
 
     res.status(200).json({
       success: true,

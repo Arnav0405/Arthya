@@ -1,77 +1,77 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from 'sequelize-typescript';
+import User from './User';
 
-export interface ITransaction extends Document {
-  userId: mongoose.Types.ObjectId;
-  type: 'income' | 'expense' | 'transfer';
-  category: string;
-  amount: number;
+@Table({
+  tableName: 'transactions',
+  timestamps: true,
+  indexes: [
+    { fields: ['userId', 'date'] },
+    { fields: ['userId', 'type'] },
+  ],
+})
+export default class Transaction extends Model {
+  @ForeignKey(() => User)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: false,
+  })
+  userId!: number;
+
+  @BelongsTo(() => User)
+  user!: User;
+
+  @Column({
+    type: DataType.ENUM('income', 'expense', 'transfer'),
+    allowNull: false,
+  })
+  type!: 'income' | 'expense' | 'transfer';
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+  })
+  category!: string;
+
+  @Column({
+    type: DataType.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0,
+    },
+  })
+  amount!: number;
+
+  @Column({
+    type: DataType.TEXT,
+    allowNull: true,
+  })
   description?: string;
-  date: Date;
+
+  @Column({
+    type: DataType.DATE,
+    defaultValue: DataType.NOW,
+  })
+  date!: Date;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+  })
   recipient?: string;
-  status: 'completed' | 'pending' | 'failed';
+
+  @Column({
+    type: DataType.ENUM('completed', 'pending', 'failed'),
+    defaultValue: 'completed',
+  })
+  status!: 'completed' | 'pending' | 'failed';
+
+  @Column({
+    type: DataType.JSONB,
+    allowNull: true,
+  })
   metadata?: {
     location?: string;
     paymentMethod?: string;
     merchantName?: string;
   };
-  createdAt: Date;
-  updatedAt: Date;
 }
-
-const transactionSchema = new Schema<ITransaction>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true,
-    },
-    type: {
-      type: String,
-      enum: ['income', 'expense', 'transfer'],
-      required: true,
-    },
-    category: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    amount: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    description: {
-      type: String,
-      trim: true,
-    },
-    date: {
-      type: Date,
-      default: Date.now,
-      index: true,
-    },
-    recipient: {
-      type: String,
-      trim: true,
-    },
-    status: {
-      type: String,
-      enum: ['completed', 'pending', 'failed'],
-      default: 'completed',
-    },
-    metadata: {
-      location: String,
-      paymentMethod: String,
-      merchantName: String,
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
-
-// Index for better query performance
-transactionSchema.index({ userId: 1, date: -1 });
-transactionSchema.index({ userId: 1, type: 1 });
-
-export default mongoose.model<ITransaction>('Transaction', transactionSchema);
