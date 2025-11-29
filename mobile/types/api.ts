@@ -220,15 +220,23 @@ export interface FinancialHealthScore {
 // Dashboard Types
 export interface DashboardData {
   summary: {
-    totalIncome: number;
-    totalExpense: number;
-    balance: number;
-    savingsRate: number;
+    // Backend may return either format
+    totalIncome?: number;
+    totalExpense?: number;
+    income?: number;
+    expense?: number;
+    balance?: number;
+    savings?: number;
+    savingsRate?: number;
+    availableBalance?: number;
+    creditLimit?: number;
   };
   recentTransactions: Transaction[];
-  topCategories: CategorySpending[];
-  goalProgress: Goal[];
-  monthlyComparison: {
+  topCategories?: CategorySpending[];
+  goalProgress?: Goal[];
+  activeGoals?: Goal[];
+  cards?: any[];
+  monthlyComparison?: {
     incomeChange: number;
     expenseChange: number;
   };

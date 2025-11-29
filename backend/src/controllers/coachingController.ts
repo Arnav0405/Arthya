@@ -13,7 +13,6 @@ import {
   generateAIAdvice,
   chatWithAI,
   generateAIWeeklySummary,
-  analyzeSpendingPatterns,
   generateGoalAdvice
 } from '../services/geminiService';
 
@@ -612,33 +611,59 @@ export const getSpendingAnalysis = async (
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - Number(days));
 
-    const transactions = await Transaction.findAll({
+    // Get all transactions for the period
+    const allTransactions = await Transaction.findAll({
       where: {
         userId,
-        type: 'expense',
         date: { [Op.gte]: daysAgo },
       },
     });
 
-    const profile = await buildFinancialProfile(userId!);
+    // Calculate totals
+    const totalIncome = allTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    const transactionData = transactions.map(t => ({
-      category: t.category,
-      amount: Number(t.amount),
-      date: t.date,
-      description: t.description || '',
-    }));
+    const totalSpending = allTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    const analysis = await analyzeSpendingPatterns(transactionData, profile);
+    // Calculate category breakdown for expenses
+    const expensesByCategory: { [key: string]: { total: number; count: number } } = {};
+    
+    allTransactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const cat = t.category || 'other';
+        if (!expensesByCategory[cat]) {
+          expensesByCategory[cat] = { total: 0, count: 0 };
+        }
+        expensesByCategory[cat].total += Number(t.amount);
+        expensesByCategory[cat].count += 1;
+      });
+
+    // Convert to array with percentages
+    const categories = Object.entries(expensesByCategory)
+      .map(([category, data]) => ({
+        category,
+        total: data.total,
+        count: data.count,
+        percentage: totalSpending > 0 ? ((data.total / totalSpending) * 100).toFixed(1) : '0',
+      }))
+      .sort((a, b) => b.total - a.total);
 
     res.status(200).json({
       success: true,
       data: {
-        ...analysis,
+        totalIncome,
+        totalSpending,
+        totalExpense: totalSpending,
+        categories,
+        categoryBreakdown: categories,
         period: `Last ${days} days`,
-        transactionCount: transactions.length,
+        transactionCount: allTransactions.length,
+        savingsRate: totalIncome > 0 ? ((totalIncome - totalSpending) / totalIncome * 100).toFixed(1) : '0',
         generatedAt: new Date().toISOString(),
-        model: 'gemini-1.5-flash',
       },
     });
   } catch (error: any) {

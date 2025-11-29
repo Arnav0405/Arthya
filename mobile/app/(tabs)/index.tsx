@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, RefreshControl, ActivityIndicator } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/services/api';
 import { DashboardData, Transaction, Goal } from '@/types/api';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
@@ -21,16 +22,23 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Home screen focused - refreshing data');
+      loadDashboard();
+    }, [])
+  );
 
   const loadDashboard = async () => {
     try {
+      console.log('Loading dashboard data...');
       const [dashboardRes, goalsRes] = await Promise.all([
         api.getDashboard(),
         api.getGoals()
       ]);
+      
+      console.log('Dashboard response:', JSON.stringify(dashboardRes, null, 2));
       
       if (dashboardRes.success && dashboardRes.data) {
         setDashboard(dashboardRes.data);
@@ -70,10 +78,11 @@ export default function HomeScreen() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
   };
 
-  const income = dashboard?.summary?.totalIncome || 0;
-  const expense = dashboard?.summary?.totalExpense || 0;
-  const balance = dashboard?.summary?.balance || (income - expense);
-  const savingsRate = dashboard?.summary?.savingsRate || 0;
+  // Backend returns 'income' and 'expense', not 'totalIncome' and 'totalExpense'
+  const income = dashboard?.summary?.totalIncome || dashboard?.summary?.income || 0;
+  const expense = dashboard?.summary?.totalExpense || dashboard?.summary?.expense || 0;
+  const balance = dashboard?.summary?.balance || dashboard?.summary?.savings || (income - expense);
+  const savingsRate = dashboard?.summary?.savingsRate || (income > 0 ? Math.round(((income - expense) / income) * 100) : 0);
 
   return (
     <View style={styles.container}>
@@ -246,6 +255,15 @@ export default function HomeScreen() {
           )}
         </Animated.View>
       </ScrollView>
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/add-transaction')}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="add" size={28} color="#000" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -513,5 +531,21 @@ const styles = StyleSheet.create({
     color: Colors.textDim,
     fontSize: 12,
     textAlign: 'center',
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 100,
+    right: 24,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

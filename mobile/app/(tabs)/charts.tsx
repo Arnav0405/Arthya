@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import { Svg, Rect, Defs, LinearGradient as SvgLinearGradient, Stop, Text as Svg
 import { Dimensions } from 'react-native';
 import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import api from '@/services/api';
 import { CategorySpending } from '@/types/api';
 
@@ -52,9 +53,12 @@ export default function ChartsScreen() {
     const [income, setIncome] = useState(0);
     const [data, setData] = useState<CategoryData[]>([]);
 
-    useEffect(() => {
-        loadData();
-    }, [selectedPeriod]);
+    // Refresh data when screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [selectedPeriod])
+    );
 
     const loadData = async () => {
         try {
@@ -333,6 +337,15 @@ export default function ChartsScreen() {
                     </Animated.View>
                 )}
             </ScrollView>
+
+            {/* Floating Action Button */}
+            <TouchableOpacity
+                style={styles.fab}
+                onPress={() => router.push('/add-transaction')}
+                activeOpacity={0.8}
+            >
+                <Ionicons name="add" size={28} color="#000" />
+            </TouchableOpacity>
         </View>
     );
 }
@@ -613,5 +626,21 @@ const styles = StyleSheet.create({
     breakdownBarFill: {
         height: '100%',
         borderRadius: 3,
+    },
+    fab: {
+        position: 'absolute',
+        bottom: 100,
+        right: 24,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: Colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 8,
     },
 });
