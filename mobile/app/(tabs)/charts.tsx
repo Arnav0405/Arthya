@@ -75,8 +75,8 @@ export default function ChartsScreen() {
                 const categories = analyticsData.categories || analyticsData.categoryBreakdown || [];
                 const categoryData: CategoryData[] = categories.map((cat: CategorySpending, index: number) => ({
                     name: cat.category.charAt(0).toUpperCase() + cat.category.slice(1).replace('_', ' '),
-                    amount: cat.total || 0,
-                    percentage: parseFloat(cat.percentage) || 0,
+                    amount: typeof cat.total === 'string' ? parseFloat(cat.total) : cat.total || 0,
+                    percentage: typeof cat.percentage === 'string' ? parseFloat(cat.percentage) : cat.percentage || 0,
                     color: categoryColors[index % categoryColors.length],
                     icon: getCategoryIcon(cat.category),
                     trend: 0,
@@ -118,9 +118,10 @@ export default function ChartsScreen() {
     }
 
     const maxAmount = Math.max(...data.map(d => d.amount), 1);
-    const chartHeight = 280;
-    const barWidth = Math.min(40, (width - 80) / Math.max(data.length, 1) - 10);
-    const barSpacing = ((width - 48) - (barWidth * data.length)) / (data.length + 1);
+    const chartHeight = 220;
+    const chartWidth = width - 80;
+    const barWidth = Math.min(40, chartWidth / Math.max(data.length, 1) - 12);
+    const barSpacing = (chartWidth - (barWidth * data.length)) / (data.length + 1);
     const borderRadius = 8;
     const displaySpending = spending || data.reduce((sum, d) => sum + d.amount, 0);
 
@@ -200,7 +201,7 @@ export default function ChartsScreen() {
                 {/* Interactive Chart */}
                 {data.length > 0 && data[0].amount > 0 ? (
                     <Animated.View entering={FadeInUp.delay(500).duration(800)} style={styles.chartContainer}>
-                        <Svg height={chartHeight + 60} width={width - 80}>
+                        <Svg height={chartHeight + 60} width={chartWidth}>
                             <Defs>
                                 {data.map((category, index) => (
                                     <SvgLinearGradient key={index} id={`grad${index}`} x1="0" y1="0" x2="0" y2="1">
@@ -218,7 +219,7 @@ export default function ChartsScreen() {
                                         key={i}
                                         x1="0"
                                         y1={y}
-                                        x2={width - 80}
+                                        x2={chartWidth}
                                         y2={y}
                                         stroke={Colors.textDim}
                                         strokeWidth="1"
@@ -230,7 +231,8 @@ export default function ChartsScreen() {
 
                             {/* Bars */}
                             {data.map((category, index) => {
-                                const barHeight = Math.max((category.amount / maxAmount) * (chartHeight - 40), 10);
+                                // Reduced max height to prevent overflow and leave space for labels
+                                const barHeight = Math.max((category.amount / maxAmount) * (chartHeight - 60), 10);
                                 const x = barSpacing + (index * (barWidth + barSpacing));
                                 const y = chartHeight - barHeight;
                                 const isSelected = index === selectedCategory;
