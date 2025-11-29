@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { Svg, Circle, G } from 'react-native-svg';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import api from '@/services/api';
 import { CategorySpending, Transaction } from '@/types/api';
 
@@ -21,9 +22,12 @@ export default function AnalyticsScreen() {
     const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    // Refresh data when screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [])
+    );
 
     const loadData = async () => {
         try {
@@ -32,16 +36,23 @@ export default function AnalyticsScreen() {
                 api.getTransactions({ limit: 5 })
             ]);
             
+            console.log('Analytics response:', JSON.stringify(analyticsRes, null, 2));
+            console.log('Transactions response:', JSON.stringify(transactionsRes, null, 2));
+            
             if (analyticsRes.success && analyticsRes.data) {
                 const data = analyticsRes.data;
                 setAnalytics({
                     totalIncome: data.totalIncome || 0,
-                    totalExpense: data.totalSpending || 0,
-                    categoryBreakdown: data.categories || [],
+                    totalExpense: data.totalSpending || data.totalExpense || 0,
+                    categoryBreakdown: data.categories || data.categoryBreakdown || [],
                 });
             }
             if (transactionsRes.success && transactionsRes.data) {
-                setTransactions(transactionsRes.data.transactions || []);
+                // Handle both array and object with transactions property
+                const txns = Array.isArray(transactionsRes.data) 
+                    ? transactionsRes.data 
+                    : transactionsRes.data.transactions || [];
+                setTransactions(txns);
             }
         } catch (error) {
             console.error('Failed to load analytics:', error);
@@ -222,6 +233,15 @@ export default function AnalyticsScreen() {
                     )}
                 </Animated.View>
             </ScrollView>
+
+            {/* Floating Action Button */}
+            <TouchableOpacity
+                style={styles.fab}
+                onPress={() => router.push('/add-transaction')}
+                activeOpacity={0.8}
+            >
+                <Ionicons name="add" size={28} color="#000" />
+            </TouchableOpacity>
         </View>
     );
 }
@@ -383,5 +403,21 @@ const styles = StyleSheet.create({
         color: Colors.textDim,
         fontSize: 14,
         marginTop: 12,
+    },
+    fab: {
+        position: 'absolute',
+        bottom: 100,
+        right: 24,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: Colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 8,
     },
 });
