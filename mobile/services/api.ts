@@ -45,7 +45,7 @@ import {
 
 const getApiUrl = () => {
   if (!__DEV__) {
-    return 'https://arthyapi.ishikabhoyar.tech/api';
+    return 'http://192.168.1.39:3000/api';
   }
   
   // For Android emulator, use 10.0.2.2
@@ -53,10 +53,10 @@ const getApiUrl = () => {
   // For iOS simulator, localhost works
   if (Platform.OS === 'android') {
     // Use your local IP for physical device, or 10.0.2.2 for emulator
-    return 'https://arthyapi.ishikabhoyar.tech/api';
+    return 'http://192.168.1.39:3000/api';
   }
   
-  return 'https://arthyapi.ishikabhoyar.tech/api';
+  return 'http://192.168.1.39:3000/api';
 };
 
 const API_URL = getApiUrl();

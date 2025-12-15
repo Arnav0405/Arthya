@@ -11,40 +11,18 @@ import sklearn
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, accuracy_score
 
-from featureExtraction import extract_features
-from inference import income_from_standardized
+from ml.data.preprocessing.featureExtraction import extract_features
+from ml.models.inference import income_from_standardized, get_feature_pipeline
 
 
 app = Flask(__name__)
 
 # Global state to reuse between requests
-FEATURE_PIPELINE_PATH = "models/feature_pipeline.joblib"
-_feature_pipe = None
-_feature_names: List[str] | None = None
 _prophet_model: Prophet | None = None
 _mu_sigma: Tuple[float, float] | None = None
-_last_future_df: pd.DataFrame | None = None
 _last_forecast_df: pd.DataFrame | None = None
-
-
-def _get_feature_pipeline(feats: pd.DataFrame) -> Tuple[sklearn.pipeline.Pipeline, List[str]]:
-    """
-    Build a fresh feature transformation pipeline from the provided features.
-    Categorical columns are ordinal-encoded (unknowns -> -1), numeric are passed through.
-    Returns the fitted pipeline along with the ordered feature names used.
-    """
-    feat_cols = [c for c in feats.columns if c not in ["ds", "y"]]
-    cat_cols = [c for c in feat_cols if feats[c].dtype == "object"]
-    num_cols = [c for c in feat_cols if c not in cat_cols]
-
-    transformer = ColumnTransformer([
-        ("cat", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1), cat_cols),
-        ("num", "passthrough", num_cols),
-    ])
-    feature_pipe = Pipeline([("transform", transformer)])
-    feat_names = cat_cols + num_cols
-    return feature_pipe, feat_names
 
 def fill_gas_price(df: pd.DataFrame) -> pd.DataFrame:
             for idx, row in df.iterrows():
@@ -82,7 +60,7 @@ def get_Monthly_Unemployment_Rate(date) -> float:
 def _json_to_features(json_records: List[Dict]) -> pd.DataFrame:
         required_cols = [
             'Date', 'Category',
-            'Platform_Count', 'Daily_Expenses', 'Daily_Income'
+            'Daily_Expenses', 'Daily_Income'
         ]
 
         df = pd.DataFrame(json_records)
@@ -104,9 +82,9 @@ def _json_to_features(json_records: List[Dict]) -> pd.DataFrame:
         df['Expenses_Total'] = df['Daily_Expenses']
         df['Job_Categories'] = df['Category']
         
-        # Approximate monthly aggregates with 30-day rolling sums
-        df['Monthly_Income'] = df['Daily_Income'].rolling(window=30, min_periods=1).sum()
-        df['Monthly_Expenses'] = df['Daily_Expenses'].rolling(window=30, min_periods=1).sum()
+        # Approximate weekly aggregates with 7-day rolling sums
+        df['Weekly_Income'] = df['Daily_Income'].rolling(window=7, min_periods=1).sum()
+        df['Weekly_Expenses'] = df['Daily_Expenses'].rolling(window=7, min_periods=1).sum()
 
         # Apply provided feature extraction
         feats = extract_features(df)
@@ -120,8 +98,7 @@ def _json_to_features(json_records: List[Dict]) -> pd.DataFrame:
 
 
 def _train_prophet(feats: pd.DataFrame, train_frac: float = 0.9) -> Dict[str, float]:
-    global _prophet_model, _mu_sigma, _last_future_df, _last_forecast_df
-    global _feature_pipe, _feature_names
+    global _prophet_model, _mu_sigma, _last_forecast_df
 
     feats = feats.sort_values('ds').reset_index(drop=True)
 
@@ -141,7 +118,7 @@ def _train_prophet(feats: pd.DataFrame, train_frac: float = 0.9) -> Dict[str, fl
     val_df = feats.iloc[split_idx:].copy() if split_idx < len(feats) else None
 
     # Instantiate a fresh, unfitted feature pipeline from current features
-    feature_pipe, feat_names = _get_feature_pipeline(feats)
+    feature_pipe, feat_names = get_feature_pipeline(feats)
 
     # Fit the pipeline on training data and transform
     feature_pipe.fit(train_df[feat_names])
@@ -164,21 +141,24 @@ def _train_prophet(feats: pd.DataFrame, train_frac: float = 0.9) -> Dict[str, fl
             **{name: reg_train_df[name].values for name in safe_regressors},
         }
     )
+
+    del safe_regressors, reg_train_df
+
     m.fit(train_prophet_df)
     _prophet_model = m
-    _feature_pipe = feature_pipe
-    _feature_names = feat_names
 
     # Calculate accuracy metrics on training data
     train_pred = m.predict(train_prophet_df)
     train_y_actual = train_df['y'].values
     train_y_pred = train_pred['yhat'].values
     
-    train_mae = float(np.mean(np.abs(train_y_actual - train_y_pred)))
-    train_rmse = float(np.sqrt(np.mean((train_y_actual - train_y_pred) ** 2)))
-    train_r2 = float(1 - np.sum((train_y_actual - train_y_pred) ** 2) / np.sum((train_y_actual - np.mean(train_y_actual)) ** 2))
+    train_mae = mean_absolute_error(train_y_actual, train_y_pred)
+    train_rmse = round(np.sqrt(mean_squared_error(train_y_actual, train_y_pred)), 4)
+    train_r2 = r2_score(train_y_actual, train_y_pred)
+    train_accuracy = accuracy_score(np.round(train_y_actual), np.round(train_y_pred))
     
     metrics = {
+        'accuracy': train_accuracy,
         'train_mae': train_mae,
         'train_rmse': train_rmse,
         'train_r2': train_r2,
@@ -211,30 +191,8 @@ def _train_prophet(feats: pd.DataFrame, train_frac: float = 0.9) -> Dict[str, fl
             'val_r2': val_r2,
         })
 
-    # Prepare 7-day future with last known regressors repeated
-    last_row = feats.iloc[[-1]][feat_names]
-    last_reg = pd.DataFrame(
-        feature_pipe.transform(last_row), columns=feat_names, index=[0]
-    )
-    future_dates = pd.date_range(start=feats['ds'].max() + pd.Timedelta(days=1), periods=7, freq='D')
-    reg_future_df = pd.DataFrame(
-        np.repeat(last_reg.values, len(future_dates), axis=0),
-        columns=feat_names,
-    )
-    safe_future = pd.DataFrame({'ds': future_dates})
-    for name in safe_regressors:
-        safe_future[name] = reg_future_df[name].values
-
-    forecast = m.predict(safe_future)
-    _last_future_df = safe_future
-    _last_forecast_df = forecast
-    
+    # Store the trained model    
     return metrics
-
-
-def _ensure_trained():
-    if _prophet_model is None or _last_forecast_df is None or _mu_sigma is None:
-        raise RuntimeError("Model not trained yet. POST data to /train first.")
 
 
 @app.post("/train")
@@ -247,34 +205,14 @@ def train_endpoint():
             return jsonify({"error": "Provide a non-empty JSON array or {'data': [...]}"}), 400
 
         feats = _json_to_features(records)
-        metrics = _train_prophet(feats, train_frac=0.9)
-
-        # Prepare outputs for saving
-        mu, sigma = _mu_sigma  # type: ignore
-        forecast_df = _last_forecast_df  # type: ignore
-        dates = forecast_df['ds'].dt.strftime('%Y-%m-%d').tolist()
-        yhat = forecast_df['yhat'].astype(float).tolist()
-        incomes = [float(income_from_standardized(float(v), mu, sigma)) for v in yhat]
-        trend = forecast_df['trend'].astype(float).tolist() if 'trend' in forecast_df.columns else [0.0] * len(forecast_df)
-        weekly = forecast_df['weekly'].astype(float).tolist() if 'weekly' in forecast_df.columns else [0.0] * len(forecast_df)
-        yearly = forecast_df['yearly'].astype(float).tolist() if 'yearly' in forecast_df.columns else [0.0] * len(forecast_df)
-
-        # Save to CSV
-        out_df = pd.DataFrame({
-            'date': dates,
-            'predicted_income': incomes,
-            'trend': trend,
-            'weekly': weekly,
-            'yearly': yearly,
-        })
-        os.makedirs("uploads", exist_ok=True)
-        out_df.to_csv(os.path.join("uploads", "predictions.csv"), index=False)
+        metrics = _train_prophet(feats, train_frac=1)
+      
 
         return jsonify({
             "status": "trained",
             "rows": len(feats),
             "train_rows": int(len(feats) * 0.9),
-            "message": "Prophet model trained and 7-day forecast prepared.",
+            "message": "Prophet model trained and forecast prepared.",
             "csv_path": "uploads/predictions.csv",
             "accuracy": {
                 "train": {
@@ -293,58 +231,9 @@ def train_endpoint():
         return jsonify({"Error": str(e)}), 500
 
 
-@app.get("/predict_7_days")
-def predict_7_days():
-    try:
-        csv_path = os.path.join("uploads", "predictions.csv")
-        if not os.path.exists(csv_path):
-            return jsonify({"error": "No predictions available. Train first."}), 404
-        df = pd.read_csv(csv_path)
-        dates = df['date'].astype(str).tolist()
-        incomes = df['predicted_income'].astype(float).tolist()
-        return jsonify({
-            "dates": dates,
-            "income": incomes,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/growth_trend")
-def growth_trend():
-    try:
-        csv_path = os.path.join("uploads", "predictions.csv")
-        if not os.path.exists(csv_path):
-            return jsonify({"error": "No predictions available. Train first."}), 404
-        df = pd.read_csv(csv_path)
-        dates = df['date'].astype(str).tolist()
-        trend = df['trend'].astype(float).tolist() if 'trend' in df.columns else [0.0] * len(df)
-        return jsonify({
-            "dates": dates,
-            "trend": trend,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/seasonality")
-def seasonality():
-    try:
-        csv_path = os.path.join("uploads", "predictions.csv")
-        if not os.path.exists(csv_path):
-            return jsonify({"error": "No predictions available. Train first."}), 404
-        df = pd.read_csv(csv_path)
-        dates = df['date'].astype(str).tolist()
-        weekly = df['weekly'].astype(float).tolist() if 'weekly' in df.columns else [0.0] * len(df)
-        yearly = df['yearly'].astype(float).tolist() if 'yearly' in df.columns else [0.0] * len(df)
-        return jsonify({
-            "dates": dates,
-            "weekly": weekly,
-            "yearly": yearly,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+@app.get("/predict_x_days")
+def predict_x_days():
+    
 
 if __name__ == "__main__":
     # Default to port 5000; configurable via PORT env var

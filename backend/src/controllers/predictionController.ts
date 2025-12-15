@@ -5,6 +5,7 @@ import { generateNudges } from '../services/nudgeService';
 import Transaction from '../models/Transaction';
 import { Op } from 'sequelize';
 
+
 // @desc    Get income prediction
 // @route   GET /api/predictions/income
 // @access  Private
@@ -14,9 +15,9 @@ export const getIncomePrediction = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
-    const months = parseInt(req.query.months as string) || 3;
+    const dates = parseInt(req.query.dates as string) || 3;
 
-    const prediction = await predictIncome(userId!, months);
+    const prediction = await predictIncome(userId!, dates);
 
     res.status(200).json({
       success: true,
