@@ -92,27 +92,32 @@ npx expo start
 ## 🔌 API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - Login user
 - `GET /api/auth/me` - Get current user
 - `PUT /api/auth/profile` - Update profile
 
 ### Transactions
+
 - `GET /api/transactions` - List transactions
 - `POST /api/transactions` - Create transaction
 - `GET /api/transactions/summary` - Get summary
 
 ### Goals
+
 - `GET /api/goals` - List goals
 - `POST /api/goals` - Create goal
 - `PUT /api/goals/:id/progress` - Update progress
 
 ### Analytics
+
 - `GET /api/analytics/dashboard` - Full dashboard
 - `GET /api/analytics/trends` - Spending trends
 - `GET /api/analytics/income` - Income analysis
 
 ### AI Coaching
+
 - `POST /api/coaching/advice` - Get personalized advice
 - `GET /api/coaching/insights` - Get spending insights
 
@@ -121,6 +126,7 @@ npx expo start
 ## 🛠️ Tech Stack
 
 ### Backend
+
 - **Runtime**: Node.js
 - **Framework**: Express.js
 - **Language**: TypeScript
@@ -129,16 +135,20 @@ npx expo start
 - **Security**: Helmet, bcrypt, CORS
 
 ### Mobile
+
 - **Framework**: React Native + Expo
 - **Language**: TypeScript
 - **UI**: Custom components with animations
 - **Navigation**: Expo Router
 - **State**: React Hooks
 
-### ML (Planned)
+### ML
+
 - **Language**: Python
-- **Framework**: TensorFlow/PyTorch
-- **Analysis**: Pandas, NumPy
+- **Architecture**: Prophet + LSTM hybrid model
+- **Pipeline**: MLflow-based MLOps with per-user model training
+- **Database**: PostgreSQL data connector
+- **Analysis**: Pandas, NumPy, Scikit-learn
 
 ## 🎯 Key Features for Gig Workers
 
@@ -147,6 +157,9 @@ npx expo start
 3. **Emergency Fund Guidance** - 3-6 months expense coverage
 4. **Flexible Categorization** - Track different income sources
 5. **Occupation Types** - Driver, Freelancer, Hybrid, Other
+6. **Per-User ML Models** - Automatic MLOps pipeline trains individual models for each user
+7. **Income Prediction** - 7-day forecasting with Prophet + LSTM hybrid approach
+8. **Pattern Analysis** - Detects seasonality, trends, and spending patterns
 
 ## 🧪 Testing
 
@@ -181,21 +194,25 @@ See [DOCKER.md](backend/DOCKER.md) for details.
 ## 📊 Database Schema
 
 ### User
+
 - Name, email, password (hashed)
 - Occupation (driver/freelancer/hybrid/other)
 - Avatar, phone
 
 ### Transaction
+
 - Type (income/expense/transfer)
 - Category, amount, description
 - Date, status, metadata
 
 ### Goal
+
 - Title, target/current amount
 - Category, deadline, status
 - Milestones with progress tracking
 
 ### Card
+
 - Card type, number, balance
 - Credit limit, status
 
@@ -222,6 +239,7 @@ See [DOCKER.md](backend/DOCKER.md) for details.
 ## 🚀 Deployment
 
 ### Backend Options
+
 1. **Docker Compose** (Recommended)
 2. **Heroku** - Node.js + MongoDB Atlas
 3. **DigitalOcean** - App Platform or Droplet
@@ -229,6 +247,7 @@ See [DOCKER.md](backend/DOCKER.md) for details.
 5. **Azure** - App Service
 
 ### Mobile Options
+
 1. **Expo EAS** - Managed builds
 2. **TestFlight** (iOS) - Beta testing
 3. **Google Play** (Android) - Production
@@ -236,6 +255,7 @@ See [DOCKER.md](backend/DOCKER.md) for details.
 ## 🛣️ Roadmap
 
 ### Phase 1 - MVP ✅
+
 - [x] Backend API with authentication
 - [x] Transaction management
 - [x] Goal tracking
@@ -244,13 +264,16 @@ See [DOCKER.md](backend/DOCKER.md) for details.
 - [x] Mobile UI
 
 ### Phase 2 - Enhancement 🚧
-- [ ] ML model integration
+
+- [x] ML model integration (MLOps pipeline with per-user models)
+- [x] Income prediction and analysis
 - [ ] Real-time notifications
 - [ ] Receipt scanning
 - [ ] Data export (CSV/PDF)
 - [ ] Two-factor authentication
 
 ### Phase 3 - Scale 📋
+
 - [ ] Multi-language support
 - [ ] Advanced analytics
 - [ ] Investment tracking
@@ -272,6 +295,7 @@ This project is licensed under the MIT License.
 ## 🤝 Support
 
 For issues or questions:
+
 - Check [Backend README](backend/README.md)
 - Review [API Testing Guide](backend/API_TESTING.md)
 - See [Mobile Integration Guide](MOBILE_INTEGRATION.md)
@@ -280,6 +304,25 @@ For issues or questions:
 
 Built with ❤️ for gig workers and everyone seeking better financial management.
 
+## 🤖 ML Pipeline - MLOps Architecture
+
+The ML module features an automatic MLOps pipeline that:
+
+1. **Data Ingestion** - Fetches user transaction data from PostgreSQL database
+2. **Feature Engineering** - Extracts spending patterns, income trends, and economic indicators
+3. **Per-User Model Training** - Trains individual Prophet + LSTM models for each user using MLflow
+4. **Model Versioning** - Stores trained models in artifacts for reproducibility
+5. **Income Prediction** - Provides 7-day forecasts with confidence intervals
+6. **Continuous Learning** - Models can be retrained as new data arrives
+
+**Key Components:**
+
+- Prophet for seasonality & trend decomposition
+- LSTM for complex temporal patterns
+- MLflow for experiment tracking and model registry
+- PostgreSQL connector for user data fetching
+- Feature extraction pipeline with economic indicators
+
 ---
 
-**Status**: Backend Complete ✅ | Mobile UI Complete ✅ | Integration Ready 🚀
+**Status**: Backend Complete ✅ | Mobile UI Complete ✅ | ML Pipeline Complete ✅ | Integration Ready 🚀
