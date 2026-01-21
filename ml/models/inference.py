@@ -17,6 +17,20 @@ import joblib
 
 warnings.filterwarnings("ignore")
 
+def warm_start_params(m):
+    # Taken Directly from Prophet source code to enable warm starting.
+    res = {}
+    for pname in ['k', 'm', 'sigma_obs']:
+        if m.mcmc_samples == 0:
+            res[pname] = m.params[pname][0][0]
+        else:
+            res[pname] = np.mean(m.params[pname])
+    for pname in ['delta', 'beta']:
+        if m.mcmc_samples == 0:
+            res[pname] = m.params[pname][0]
+        else:
+            res[pname] = np.mean(m.params[pname], axis=0)
+    return res
 
 def load_dataset(csv_path: str) -> pd.DataFrame:
 	df = pd.read_csv(csv_path)
@@ -37,7 +51,7 @@ def time_series_split(df: pd.DataFrame, test_size: float = 0.5) -> Tuple[pd.Data
 	return train_df, test_df
 
 
-def fit_prophet(train_df: pd.DataFrame, regressor_df: pd.DataFrame, feature_names: List[str]) -> Prophet:
+def fit_prophet(train_df: pd.DataFrame, regressor_df: pd.DataFrame, feature_names: List[str], prev_Model: Prophet | None = None) -> Prophet:
 	m = Prophet()
 	safe_feature_names = [name for name in feature_names if name not in ['ds', 'y', 'cap', 'floor']]
 	for name in safe_feature_names:
@@ -47,7 +61,12 @@ def fit_prophet(train_df: pd.DataFrame, regressor_df: pd.DataFrame, feature_name
 		"y": train_df["y"].values,
 		**{name: regressor_df[name].values for name in safe_feature_names},
 	})
-	m.fit(train_for_prophet)
+	
+	if prev_Model is not None:
+		m.fit(train_for_prophet, init=warm_start_params(prev_Model))
+	else:
+		m.fit(train_for_prophet)
+	
 	return m
 
 def get_feature_pipeline(feats: pd.DataFrame) -> Tuple[sklearn.pipeline.Pipeline, List[str]]:
@@ -110,13 +129,13 @@ def retrain_prophet(userId: int, feats: pd.DataFrame, train_frac: float = 0.9) -
 	)
 
 	# Train Prophet with regressors on train set
-	prophet_model = fit_prophet(train_df, reg_train_df, feat_names)
+	prophet_model = fit_prophet(train_df, reg_train_df, feat_names, m)
 	
 	forecast_train = prophet_model.predict(train_df[['ds'] + feat_names])
 	prophet_model.plot_components(forecast_train)
 
-	mae = mean_absolute_error(aligned_y_test, final_pred_test)
-	rmse = np.sqrt(mean_squared_error(aligned_y_test, final_pred_test))
+	mae = mean_absolute_error(train_df['y'], forecast_train['yhat'])
+	rmse = np.sqrt(mean_squared_error(train_df['y'], forecast_train['yhat']))
 
 	return {
 		"mae": mae,
@@ -220,7 +239,7 @@ def train_prophet(userId: int, feats: pd.DataFrame, train_frac: float = 0.9) -> 
 
 	_prophet_model = fit_prophet(train_df, reg_train_df, feat_names)
 
-	with open(f'../models/artifacts/modelUser_{userIdz}_{_mu_sigma[0]}_.json', 'wb') as f:
+	with open(f'../models/artifacts/modelUser_{userId}.json', 'wb') as f:
 		f.write(model_to_json(_prophet_model))
 
-	return _mu_sigma
+	return (_prophet_model, _mu_sigma)
